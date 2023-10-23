@@ -46,10 +46,25 @@ class BaiDuClient:
     def handle_response(self, resp):
         pass
 
+    def get_access_token(self, client_id: str, client_secret: str, grant_type='client_credential'):
+        """获取 Access_token
+
+        ref: https://ai.baidu.com/ai-doc/REFERENCE/Ck3dwjhhu
+        """
+        url = "https://aip.baidubce.com/oauth/2.0/token"
+        params = {
+            'grant_type': grant_type,
+            'client_id': client_id,
+            'client_secret': client_secret
+        }
+        resp = self.do_post(url, params=params)
+        self.handle_response(resp)
+        return resp.json()
+
     def create_tts(self):
         """创建长文本在线合成任务
         TODO
-        
+
         ref: https://cloud.baidu.com/doc/SPEECH/s/ulbxh8rbu#%E5%88%9B%E5%BB%BA%E9%95%BF%E6%96%87%E6%9C%AC%E5%9C%A8%E7%BA%BF%E5%90%88%E6%88%90%E4%BB%BB%E5%8A%A1
         """
         url = 'https://aip.baidubce.com/rpc/2.0/tts/v1/create'
@@ -62,7 +77,7 @@ class BaiDuClient:
     def query_tts(self):
         """查询长文本在线合成任务结果
         TODO
-        
+
         ref: https://cloud.baidu.com/doc/SPEECH/s/ulbxh8rbu#%E6%9F%A5%E8%AF%A2%E9%95%BF%E6%96%87%E6%9C%AC%E5%9C%A8%E7%BA%BF%E5%90%88%E6%88%90%E4%BB%BB%E5%8A%A1%E7%BB%93%E6%9E%9C
         """
         url = 'https://aip.baidubce.com/rpc/2.0/tts/v1/create'
