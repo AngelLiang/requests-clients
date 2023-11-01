@@ -46,7 +46,7 @@ class BaiDuClient:
     def handle_response(self, resp):
         pass
 
-    def get_access_token(self, client_id: str, client_secret: str, grant_type='client_credential'):
+    def get_access_token(self, client_id: str, client_secret: str, grant_type='client_credentials'):
         """获取 Access_token
 
         ref: https://ai.baidu.com/ai-doc/REFERENCE/Ck3dwjhhu
