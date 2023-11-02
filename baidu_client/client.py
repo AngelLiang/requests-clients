@@ -63,7 +63,7 @@ class BaiDuClient:
         self.handle_response(resp)
         return resp.json()
 
-    def text2audio(self, text, token, cuid, ctp=1, lan='zh') -> Response:
+    def text2audio(self, text, token, cuid, ctp=1, lan='zh', spd=5, pit=5, vol=5, aue=3) -> Response:
         """
         短文本在线合成
 
@@ -84,6 +84,10 @@ class BaiDuClient:
             'cuid': cuid,
             'ctp': ctp,
             'lan': lan,
+            'spd': spd,
+            'pit': pit,
+            'vol': vol,
+            'aue': aue,
         }
         resp = self.do_post(url, params=params, data=data)
         self.handle_response(resp)

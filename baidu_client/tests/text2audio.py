@@ -29,3 +29,18 @@ def test_text2audio():
     resp = client.text2audio('你好', token=token, cuid=cuid)
     print(resp.headers)
     assert 'audio' in resp.headers['Content-Type']
+
+
+def test_text2audio_wav():
+    """
+    pytest baidu_client/tests/text2audio.py::test_text2audio_wav -s
+    """
+    from baidu_client.client import BaiDuClient
+    client = BaiDuClient()
+    json_resp = client.get_access_token(BAIDU_APIKEY, BAIDU_SECRETKEY)
+    # print(json_resp)
+    token = json_resp['access_token']
+    cuid = 'test'
+    resp = client.text2audio('你好', token=token, cuid=cuid, aue=6)
+    print(resp.headers)
+    assert 'audio/wav' == resp.headers['Content-Type']
