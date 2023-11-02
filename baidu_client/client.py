@@ -2,9 +2,9 @@
 from json import dumps as json_dumps
 from typing import Dict, List
 from urllib3.util import Retry
-from requests import Request, Session
+from requests import Request, Session, Response
 import requests
-# from baidu_client.utils import pretty_print_POST
+from baidu_client.utils import pretty_print_POST
 
 
 class ClientError(Exception):
@@ -13,17 +13,19 @@ class ClientError(Exception):
 
 class BaiDuClient:
 
-    def __init__(self, timeout=10) -> None:
+    def __init__(self, timeout=10, apikey: str = None, secretkey: str = None) -> None:
         self.timeout: int = timeout
+        self.apikey = apikey
+        self.secretkey = secretkey
 
-    def do_request(self, method, url, params=None, json=None, headers=None, files=None):
-        req = Request(method=method, url=url, params=params, json=json, headers=headers, files=files)
+    def do_request(self, method, url, params=None, json=None, headers=None, files=None, data=None):
+        req = Request(method=method, url=url, params=params, json=json, headers=headers, files=files, data=data)
         prepared = req.prepare()
 
         if json:
             prepared.body = json_dumps(json, ensure_ascii=False, allow_nan=False).encode('utf-8')
             prepared.prepare_content_length(prepared.body)
-        # pretty_print_POST(prepared)
+        pretty_print_POST(prepared)
 
         try:
             s = Session()
@@ -37,8 +39,8 @@ class BaiDuClient:
     def do_get(self, url, params=None, headers=None):
         return self.do_request('get', url, params=params, headers=headers)
 
-    def do_post(self, url, params=None, json=None, headers=None):
-        return self.do_request('post', url, params=params, json=json, headers=headers)
+    def do_post(self, url, params=None, json=None, headers=None, data=None):
+        return self.do_request('post', url, params=params, json=json, headers=headers, data=data)
 
     # def join_url(self, path):
     #     return self.base_url + path
@@ -46,7 +48,7 @@ class BaiDuClient:
     def handle_response(self, resp):
         pass
 
-    def get_access_token(self, client_id: str, client_secret: str, grant_type='client_credentials'):
+    def get_access_token(self, client_id: str, client_secret: str, grant_type='client_credentials') -> Dict:
         """获取 Access_token
 
         ref: https://ai.baidu.com/ai-doc/REFERENCE/Ck3dwjhhu
@@ -60,6 +62,32 @@ class BaiDuClient:
         resp = self.do_post(url, params=params)
         self.handle_response(resp)
         return resp.json()
+
+    def text2audio(self, text, token, cuid, ctp=1, lan='zh') -> Response:
+        """
+        短文本在线合成
+
+        :param text: 合成的文本
+        :param tok: token
+
+
+        ref: https://ai.baidu.com/ai-doc/SPEECH/mlbxh7xie
+        """
+        url = 'https://tsn.baidu.com/text2audio'
+        params = {
+            # 'client_id': self.apikey,
+            # 'client_secret': self.secretkey,
+        }
+        data = {
+            'tex': text,
+            'tok': token,
+            'cuid': cuid,
+            'ctp': ctp,
+            'lan': lan,
+        }
+        resp = self.do_post(url, params=params, data=data)
+        self.handle_response(resp)
+        return resp
 
     def create_tts(self):
         """创建长文本在线合成任务

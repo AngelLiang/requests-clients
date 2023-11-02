@@ -16,13 +16,16 @@ if not BAIDU_SECRETKEY:
     raise ValueError('secretkey错误')
 
 
-def test_get_token():
+def test_text2audio():
     """
-    pytest baidu_client/tests/token.py::test_get_token -s
+    pytest baidu_client/tests/text2audio.py::test_text2audio -s
     """
     from baidu_client.client import BaiDuClient
     client = BaiDuClient()
     json_resp = client.get_access_token(BAIDU_APIKEY, BAIDU_SECRETKEY)
-    print(json_resp)
-    assert 'access_token' in json_resp
-    # token = json_resp['access_token']
+    # print(json_resp)
+    token = json_resp['access_token']
+    cuid = 'test'
+    resp = client.text2audio('你好', token=token, cuid=cuid)
+    print(resp.headers)
+    assert 'audio' in resp.headers['Content-Type']
