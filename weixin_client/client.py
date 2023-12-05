@@ -1,17 +1,14 @@
 import json
 from json import dumps as json_dumps
-from typing import Dict, List
+from typing import Dict, List, Optional
 from urllib3.util import Retry
 from requests import Request, Session
 import requests
 from weixin_client.utils import pretty_print_POST
 
-from weixin_client.errors import InvaildMaterialError
+from weixin_client.errors import WeiXinClientError
 from weixin_client import result_code
-
-
-class ClientError(Exception):
-    pass
+# from weixin_client.errors import result_code_mapping
 
 
 class WeiXinClient:
@@ -33,9 +30,9 @@ class WeiXinClient:
             # s.mount('http://', HTTPAdapter(max_retries=self.retries))
             return s.send(prepared, timeout=self.timeout)
         except requests.exceptions.ReadTimeout as err:
-            raise ClientError(err)
+            raise
         except requests.exceptions.ConnectionError as err:
-            raise ClientError(err)
+            raise
 
     def do_get(self, url, params=None, headers=None):
         return self.do_request('get', url, params=params, headers=headers)
@@ -49,11 +46,17 @@ class WeiXinClient:
     def handle_response(self, resp):
         try:
             resp_json = resp.json()
-            if 'errcode' in resp_json:
-                if resp_json['errcode'] == result_code.INVALID_MEDIA:
-                    raise InvaildMaterialError(detail=str(resp_json))
         except json.decoder.JSONDecodeError:
-            pass
+            return
+
+        try:
+            errcode = resp_json['errcode']
+            errmsg = resp_json['errmsg']
+        except KeyError:
+            return
+
+        if errcode != 0:
+            raise WeiXinClientError(errcode, errmsg)
 
     def get_access_token(self, appid: str, appsecret: str, grant_type='client_credential'):
         """获取access token"""
@@ -435,12 +438,66 @@ class WeiXinClient:
         params = {
             "access_token": access_token,
         }
-        files = {'media': open(img_path, 'rb')}
+        with open(img_path, 'rb') as media:
+            files = {'media': media}
+            resp = self.do_request('post', url, params=params, files=files)
+            self.handle_response(resp)
+            return resp.json()
+
+    def upload_img_content(self, access_token, content):
+        """上传图文消息内的图片获取URL
+
+        return:
+
+        {
+            "url":  "http://mmbiz.qpic.cn/mmbiz/gLO17UPS6FS2xsypf378iaNhWacZ1G1UplZYWEYfwvuU6Ont96b1roYs CNFwaRrSaKTPCUdBK9DgEHicsKwWCBRQ/0"
+        }
+
+        """
+        url = 'https://api.weixin.qq.com/cgi-bin/media/uploadimg'
+        params = {
+            "access_token": access_token,
+        }
+        files = {'media': content}
         resp = self.do_request('post', url, params=params, files=files)
         resp_json = self.handle_response(resp)
         return resp.json()
 
-    def add_material(self, access_token, type, media, title: str, intro: str):
+    def add_material(self, access_token, type, filepath, title: str, intro: str):
+        """新增其他类型永久素材
+
+        :param type: 媒体文件类型，分别有图片（image）、语音（voice）、视频（video）和缩略图（thumb）
+        :param title: 视频素材的标题
+        :param intro: 视频素材的描述
+
+        return:
+
+        {
+            "media_id":MEDIA_ID,
+            "url":URL
+        }
+
+        ref: https://developers.weixin.qq.com/doc/offiaccount/Asset_Management/Adding_Permanent_Assets.html
+
+        """
+        url = 'https://api.weixin.qq.com/cgi-bin/material/add_material'
+        params = {
+            "access_token": access_token,
+            'type': type,
+        }
+        with open(filepath, 'rb') as media:
+            files = {
+                'media': media,
+                'description': json_dumps({
+                    "title": title,
+                    "introduction": intro
+                })
+            }
+            resp = self.do_request('post', url, params=params, files=files)
+            resp_json = self.handle_response(resp)
+            return resp.json()
+
+    def add_material_by_content(self, access_token, type, content, title: str, intro: str):
         """新增其他类型永久素材
 
         :param type: 媒体文件类型，分别有图片（image）、语音（voice）、视频（video）和缩略图（thumb）
@@ -463,14 +520,14 @@ class WeiXinClient:
             'type': type,
         }
         files = {
-            'media': open(media, 'rb'),
+            'media': content,
             'description': json_dumps({
                 "title": title,
                 "introduction": intro
             })
         }
         resp = self.do_request('post', url, params=params, files=files)
-        resp_json = self.handle_response(resp)
+        self.handle_response(resp)
         return resp.json()
 
     def get_material(self, access_token, media_id):
@@ -502,6 +559,8 @@ class WeiXinClient:
             "down_url":DOWN_URL,
         }
 
+        其他类型的素材消息，则响应的直接为素材的内容，开发者可以自行保存为文件。
+
         ref: https://developers.weixin.qq.com/doc/offiaccount/Asset_Management/Getting_Permanent_Assets.html
         """
         url = 'https://api.weixin.qq.com/cgi-bin/material/get_material'
@@ -513,14 +572,7 @@ class WeiXinClient:
         }
         resp = self.do_post(url, params=params, json=body)
         self.handle_response(resp)
-
-        try:
-            resp_json = resp.json()
-            if resp_json['errcode'] == result_code.INVALID_MEDIA:
-                raise InvaildMaterialError(detail=str(resp_json))
-        except json.decoder.JSONDecodeError:
-            return resp.content
-
+        return resp
         # return resp.content
 
     def del_material(self, access_token, media_id):
@@ -599,10 +651,10 @@ class WeiXinClient:
             'media_id': media_id
         }
         resp = self.do_post(url, params=params, json=body)
-        resp_json = self.handle_response(resp)
+        self.handle_response(resp)
         return resp.json()
 
-    def update_draft(self, access_token, media_id, index, article):
+    def update_draft(self, access_token, media_id, article, index=0):
         """修改草稿
 
         参数	是否必须	说明
@@ -728,7 +780,7 @@ class WeiXinClient:
         resp_json = self.handle_response(resp)
         return resp.json()
 
-    def get_publish_list(self, access_token, offset=0, count=20, no_content=0):
+    def get_success_publish_list(self, access_token, offset=0, count=20, no_content=0):
         """获取成功发布列表
 
         return:
@@ -775,7 +827,7 @@ class WeiXinClient:
             "no_content": no_content
         }
         resp = self.do_post(url, params=params, json=body)
-        resp_json = self.handle_response(resp)
+        self.handle_response(resp)
         return resp.json()
 
     def get_article(self, access_token, article_id):
@@ -792,7 +844,7 @@ class WeiXinClient:
         resp_json = self.handle_response(resp)
         return resp.json()
 
-    def del_publish(self, access_token, article_id, index=1):
+    def del_publish(self, access_token, article_id, index=0):
         """
         发布成功之后，随时可以通过该接口删除。此操作不可逆，请谨慎操作。
 
@@ -861,16 +913,16 @@ class WeiXinClient:
         params = {
             "access_token": access_token,
         }
-        body = {
+        payload = {
             "publish_id": publish_id,
         }
-        resp = self.do_post(url, params=params, json=body)
-        resp_json = self.handle_response(resp)
+        resp = self.do_post(url, params=params, json=payload)
+        self.handle_response(resp)
         return resp.json()
 
-    def preview(self, access_token, openid, msgtype, media_id):
+    def mass_preview(self, access_token, openid, msgtype, msgtype_data):
         """
-
+        群发预览接口
 
         ref: https://developers.weixin.qq.com/doc/offiaccount/Message_Management/Batch_Sends_and_Originality_Checks.html#5
         """
@@ -881,13 +933,78 @@ class WeiXinClient:
         params = {
             "access_token": access_token,
         }
-        body = {
+        payload = {
             'touser': openid,
             'msgtype': msgtype,
-            msgtype: {
-                'media_id': media_id,
-            }
+            msgtype: msgtype_data
         }
-        resp = self.do_post(url, params=params, json=body)
-        resp_json = self.handle_response(resp)
+        resp = self.do_post(url, params=params, json=payload)
+        self.handle_response(resp)
+        return resp.json()
+
+    def mass_preview_mpnews(self, access_token, openid, media_id):
+        """预览图文消息"""
+        msgtype = 'mpnews'
+        return self.mass_preview(access_token, openid, msgtype, {'media_id': media_id})
+
+    def mass_sendall(self, access_token, msgtype, msgtype_data, is_to_all=True, tag_id=None, send_ignore_reprint=0):
+        """
+        根据标签进行群发
+
+        ref: https://developers.weixin.qq.com/doc/offiaccount/Message_Management/Batch_Sends_and_Originality_Checks.html#_3%E3%80%81%E6%A0%B9%E6%8D%AE%E6%A0%87%E7%AD%BE%E8%BF%9B%E8%A1%8C%E7%BE%A4%E5%8F%91%E3%80%90%E8%AE%A2%E9%98%85%E5%8F%B7%E4%B8%8E%E6%9C%8D%E5%8A%A1%E5%8F%B7%E8%AE%A4%E8%AF%81%E5%90%8E%E5%9D%87%E5%8F%AF%E7%94%A8%E3%80%91
+
+        """
+        if msgtype not in ('mpnews', 'text', 'voice', 'image', 'mpvideo', 'wxcard'):
+            raise ValueError('msgtype不合法')
+
+        url = 'https://api.weixin.qq.com/cgi-bin/message/mass/sendall'
+
+        params = {
+            "access_token": access_token,
+        }
+        payload = {
+            "filter": {
+                "is_to_all": is_to_all,
+                "tag_id": tag_id
+            },
+            "msgtype": msgtype,
+            msgtype: msgtype_data,
+            "send_ignore_reprint": send_ignore_reprint
+        }
+        resp = self.do_post(url, params=params, json=payload)
+        self.handle_response(resp)
+        return resp.json()
+
+    def mass_sendall_mpnews(self, access_token, media_id, is_to_all=True, tag_id=None, send_ignore_reprint=0):
+        """群发图文消息"""
+        msgtype = 'mpnews'
+        msgtype_data = {"media_id": media_id}
+        return self.mass_sendall(access_token, msgtype, msgtype_data, is_to_all=is_to_all, tag_id=tag_id, send_ignore_reprint=send_ignore_reprint)
+
+    def mass_get(self, access_token, msg_id):
+        """查询群发消息发送状态
+
+        return:
+
+        参数	说明
+        msg_id	群发消息后返回的消息id
+        msg_status	消息发送后的状态，SEND_SUCCESS表示发送成功，SENDING表示发送中，SEND_FAIL表示发送失败，DELETE表示已删除
+
+        {
+            "msg_id":201053012,
+            "msg_status":"SEND_SUCCESS"
+        }
+
+
+        ref: https://developers.weixin.qq.com/doc/offiaccount/Message_Management/Batch_Sends_and_Originality_Checks.html#_7%E3%80%81%E6%9F%A5%E8%AF%A2%E7%BE%A4%E5%8F%91%E6%B6%88%E6%81%AF%E5%8F%91%E9%80%81%E7%8A%B6%E6%80%81%E3%80%90%E8%AE%A2%E9%98%85%E5%8F%B7%E4%B8%8E%E6%9C%8D%E5%8A%A1%E5%8F%B7%E8%AE%A4%E8%AF%81%E5%90%8E%E5%9D%87%E5%8F%AF%E7%94%A8%E3%80%91
+        """
+        url = 'https://api.weixin.qq.com/cgi-bin/message/mass/get'
+        params = {
+            "access_token": access_token,
+        }
+        payload = {
+            "msg_id": msg_id,
+        }
+        resp = self.do_post(url, params=params, json=payload)
+        self.handle_response(resp)
         return resp.json()
